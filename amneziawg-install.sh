@@ -271,7 +271,7 @@ if [[ ${OS} == 'ubuntu' ]]; then
 
 elif [[ ${OS} == 'debian' ]]; then
 	apt update
-	apt install -y curl gnupg ca-certificates software-properties-common python3-launchpadlib dirmngr iptables
+	apt install -y linux-headers-$(uname -r) curl gnupg ca-certificates software-properties-common python3-launchpadlib dirmngr iptables
 
 	# Add Amnezia PPA GPG key (only if missing)
 	if [[ ! -f /usr/share/keyrings/amnezia.gpg ]]; then
