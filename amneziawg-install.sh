@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -euo pipefail
+
+
 # AmneziaWG server installer
 # https://github.com/varckin/amneziawg-install
 
@@ -254,57 +257,52 @@ function installAmneziaWG() {
 	# Run setup questions first
 	installQuestions
 
-	# Install AmneziaWG tools and module
-	if [[ ${OS} == 'ubuntu' ]]; then
-		if [[ -e /etc/apt/sources.list.d/ubuntu.sources ]]; then
-			if ! grep -q "deb-src" /etc/apt/sources.list.d/ubuntu.sources; then
-				cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/amneziawg.sources
-				sed -i 's/deb/deb-src/' /etc/apt/sources.list.d/amneziawg.sources
-			fi
-		else
-			if ! grep -q "^deb-src" /etc/apt/sources.list; then
-				cp /etc/apt/sources.list /etc/apt/sources.list.d/amneziawg.sources.list
-				sed -i 's/^deb/deb-src/' /etc/apt/sources.list.d/amneziawg.sources.list
-			fi
-		fi
-		apt install -y software-properties-common
+# Install AmneziaWG tools and module
+if [[ ${OS} == 'ubuntu' ]]; then
+	apt update
+	apt install -y curl gnupg ca-certificates software-properties-common iptables
+
+	if ! grep -Rqs "amnezia/ppa" /etc/apt/sources.list.d; then
 		add-apt-repository -y ppa:amnezia/ppa
-		apt install -y amneziawg amneziawg-tools qrencode
-	elif [[ ${OS} == 'debian' ]]; then
-    # Обновляем пакеты и ставим зависимости
-    apt update
-    apt install -y software-properties-common python3-launchpadlib gnupg2 dirmngr linux-headers-$(uname -r)
-
-    # Проверяем, что есть deb-src в sources.list
-    if ! grep -q "^deb-src" /etc/apt/sources.list; then
-        sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list
-    fi
-
-    # Добавляем ключ от AmneziaWG
-    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828
-
-    # Добавляем репозиторий в sources.list (без Signed-By, чтобы не было конфликтов)
-    if ! grep -q "amnezia/ppa" /etc/apt/sources.list; then
-        echo "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" >> /etc/apt/sources.list
-        echo "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" >> /etc/apt/sources.list
-    fi
-
-    # Обновляем список пакетов
-    apt update
-
-    # Устанавливаем AmneziaWG
-    apt install -y amneziawg amneziawg-tools qrencode iptables
-	elif [[ ${OS} == 'fedora' ]]; then
-		dnf config-manager --set-enabled crb
-		dnf install -y epel-release
-		dnf copr enable -y amneziavpn/amneziawg
-		dnf install -y amneziawg-dkms amneziawg-tools qrencode iptables
-	elif [[ ${OS} == 'centos' ]] || [[ ${OS} == 'almalinux' ]] || [[ ${OS} == 'rocky' ]]; then
-		dnf config-manager --set-enabled crb
-		dnf install -y epel-release
-		dnf copr enable -y amneziavpn/amneziawg
-		dnf install -y amneziawg-dkms amneziawg-tools qrencode iptables
 	fi
+
+	apt update
+	apt install -y amneziawg amneziawg-tools qrencode
+
+elif [[ ${OS} == 'debian' ]]; then
+	apt update
+	apt install -y curl gnupg ca-certificates software-properties-common python3-launchpadlib dirmngr iptables
+
+	# Add Amnezia PPA GPG key (only if missing)
+	if [[ ! -f /usr/share/keyrings/amnezia.gpg ]]; then
+		curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x4166F2C257290828" \
+		| gpg --dearmor \
+		> /usr/share/keyrings/amnezia.gpg
+	fi
+
+	# Add Amnezia PPA repository (only if missing)
+	if [[ ! -f /etc/apt/sources.list.d/amnezia.list ]]; then
+		cat > /etc/apt/sources.list.d/amnezia.list <<EOF
+deb [signed-by=/usr/share/keyrings/amnezia.gpg] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main
+EOF
+	fi
+
+	apt update
+	apt install -y amneziawg amneziawg-tools qrencode
+
+elif [[ ${OS} == 'fedora' ]]; then
+	dnf config-manager --set-enabled crb
+	dnf install -y epel-release
+	dnf copr enable -y amneziavpn/amneziawg
+	dnf install -y amneziawg-dkms amneziawg-tools qrencode iptables
+
+elif [[ ${OS} == 'centos' ]] || [[ ${OS} == 'almalinux' ]] || [[ ${OS} == 'rocky' ]]; then
+	dnf config-manager --set-enabled crb
+	dnf install -y epel-release
+	dnf copr enable -y amneziavpn/amneziawg
+	dnf install -y amneziawg-dkms amneziawg-tools qrencode iptables
+fi
+
 
 	SERVER_AWG_CONF="${AMNEZIAWG_DIR}/${SERVER_AWG_NIC}.conf"
 
@@ -582,11 +580,12 @@ function uninstallAmneziaWG() {
 			else
 				rm -f /etc/apt/sources.list.d/amneziawg.sources.list
 			fi
-		elif [[ ${OS} == 'debian' ]]; then
-			apt-get remove -y amneziawg amneziawg-tools
-			rm -f /etc/apt/sources.list.d/amneziawg.sources.list
-			apt-key del 57290828
-			apt update
+    elif [[ ${OS} == 'debian' ]]; then
+	    apt remove -y amneziawg amneziawg-tools
+	    rm -f /etc/apt/sources.list.d/amnezia.list
+	    rm -f /usr/share/keyrings/amnezia.gpg
+	    apt update
+
 		elif [[ ${OS} == 'fedora' ]]; then
 			dnf remove -y amneziawg-dkms amneziawg-tools
 			dnf copr disable -y amneziavpn/amneziawg
